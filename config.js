@@ -130,8 +130,12 @@ export function parsePattern(text) {
   // # 以降は通信の URL に含まれず、ブロックルールで止められない（iframe で読み込めば差し替えも効かない）。
   if (rawPath.includes('#')) throw new Error('# 以降（フラグメント）は使えません');
 
-  const [, rawHostname, port = ''] = host.match(/^(.*?)(?::([0-9]+))?$/);
+  const [, rawHostname, rawPort = ''] = host.match(/^(.*?)(?::([0-9]+))?$/);
   if (rawHostname.includes(':')) throw new Error('ポートの書き方が正しくありません');
+  // 08443 のような書き方も、ブラウザと同じく 8443 にそろえる。
+  const portNumber = Number(rawPort);
+  if (rawPort !== '' && (portNumber < 1 || portNumber > 65535)) throw new Error('ポートは 1〜65535 で書いてください');
+  const port = rawPort === '' ? '' : String(portNumber);
   const hostname = normalizeHostname(rawHostname).replace(/\*+/g, '*');
   const path = rawPath === '' ? '' : normalizePath(rawPath).replace(/\*+/g, '*');
   return { hostname, port, path };
