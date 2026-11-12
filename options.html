@@ -11,8 +11,27 @@
     <p id="state"></p>
     <button id="register" type="button">Touch ID を登録する</button>
     <p id="status" role="status"></p>
+
     <h2>対象 URL</h2>
-    <ul id="gated-urls" class="url"></ul>
+    <p>ここに書いた URL を開く前に、Touch ID を求めます。保存にも Touch ID が必要です。</p>
+
+    <label for="custom-patterns">URL パターン（1 行に 1 つ）</label>
+    <textarea id="custom-patterns" class="url" rows="8" spellcheck="false"
+      placeholder="example.com/admin*&#10;*.internal.example.com"></textarea>
+    <ul class="hint">
+      <li>スキームは省けます。http と https の両方が対象です。</li>
+      <li>ホストの <code>*</code> はホスト名の一部に一致します（<code>*.example.com</code> は <code>example.com</code> にも一致します）。</li>
+      <li>パスは前方一致です。パスの <code>*</code> は任意の文字列に一致します。パスを省くと、そのホストのすべてのページが対象です。</li>
+    </ul>
+
+    <label class="checkbox"><input id="aws-preset" type="checkbox"> AWS IAM Identity Center のプリセットを使う</label>
+    <details>
+      <summary>プリセットの対象 URL</summary>
+      <ul id="aws-preset-urls" class="url"></ul>
+    </details>
+
+    <button id="save" type="button">Touch ID で保存する</button>
+    <p id="settings-status" role="status"></p>
   </main>
   <script type="module" src="options.js"></script>
 </body>
