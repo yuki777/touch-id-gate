@@ -60,3 +60,7 @@ Chrome 122 以降（Chromium 系ブラウザ）と、Touch ID のある Mac が�
 | `options.html` / `options.js` | 設定ページ（Touch ID の登録） |
 
 外部への通信はありません。登録した公開鍵とクレデンシャル ID は `chrome.storage.local` に保存します。
+
+## ライセンス
+
+[MIT](LICENSE)
