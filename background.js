@@ -1,10 +1,12 @@
 import {
-  CREDENTIAL_REQUESTS,
-  GATED_NAVIGATIONS,
-  PORTAL_SITES,
   UNLOCK_MINUTES,
+  buildRules,
   isGatedUrl,
   isUnlockableUrl,
+  loadRules,
+  onSettingsChanged,
+  parseCustomPatterns,
+  storeSettings,
 } from './config.js';
 import { loadCredential, randomChallenge, verifyAssertion } from './webauthn.js';
 
@@ -13,15 +15,11 @@ const ALLOW_PRIORITY = 2;
 const FRAME_RESOURCE_TYPES = ['main_frame', 'sub_frame'];
 // 認証情報の通信はページ内の fetch で呼ばれるので、画面遷移以外の種類もすべて止める。
 const ALL_RESOURCE_TYPES = Object.values(chrome.declarativeNetRequest.ResourceType);
-const BLOCK_RULES = [
-  ...GATED_NAVIGATIONS.map((entry) => ({ pattern: entry.pattern, resourceTypes: FRAME_RESOURCE_TYPES })),
-  ...CREDENTIAL_REQUESTS.map((entry) => ({ pattern: entry.pattern, resourceTypes: ALL_RESOURCE_TYPES })),
-];
-const WATCHED_NAVIGATIONS = {
-  url: [...GATED_NAVIGATIONS, ...PORTAL_SITES].map((entry) => ({ urlMatches: entry.pattern })),
-};
+// 対象 URL は設定で変わるので、遷移はすべて受け取ってから判定する。
+const WATCHED_NAVIGATIONS = { url: [{ schemes: ['http', 'https'] }] };
 const RELOCK_ALARM_PREFIX = 'relock:';
 const GATE_PAGE_URL = chrome.runtime.getURL('gate.html');
+const OPTIONS_PAGE_URL = chrome.runtime.getURL('options.html');
 
 const MILLISECONDS_PER_MINUTE = 60_000;
 // Chromium は拡張ページの RP ID を「chrome-extension://<拡張 ID>」として扱う。実装差に備えて拡張 ID 単体も受け付ける。
@@ -31,21 +29,77 @@ const ACCEPTED_RP_IDS = [EXTENSION_ORIGIN, chrome.runtime.id];
 const challengeKey = (tabId) => `challenge:${tabId}`;
 const unlockExpiryKey = (tabId) => `unlockExpiresAt:${tabId}`;
 
+// 設定から作った対象 URL。service worker が起きている間はキャッシュし、設定が変わったら作り直す。
+let rulesPromise = null;
+const getRules = () => (rulesPromise ??= loadRules());
+
+// Chrome が登録を受け付ける正規表現ルールの上限。
+const MAX_REGEX_RULES = chrome.declarativeNetRequest.MAX_NUMBER_OF_REGEX_RULES ?? 1000;
+
+const blockRuleCandidates = (rules) => [
+  ...rules.gatedNavigations.map((entry) => ({ entry, resourceTypes: FRAME_RESOURCE_TYPES })),
+  ...rules.credentialRequests.map((entry) => ({ entry, resourceTypes: ALL_RESOURCE_TYPES })),
+];
+
+// ブロックルールにできない（RE2 で通らない、大きすぎる）正規表現と、その理由を返す。
+async function findUnsupportedRegexes(candidates) {
+  const results = await Promise.all(
+    candidates.map(({ entry }) => chrome.declarativeNetRequest.isRegexSupported({ regex: entry.pattern })),
+  );
+  return candidates
+    .map(({ entry }, index) => ({ entry, result: results[index] }))
+    .filter(({ result }) => !result.isSupported);
+}
+
+// 保存する前に、その設定がブロックルールとして登録できることを確かめる。
+async function assertEnforceable(rules) {
+  const candidates = blockRuleCandidates(rules);
+  if (candidates.length > MAX_REGEX_RULES) {
+    throw new Error(
+      `対象 URL が多すぎます（ブロックルールは ${MAX_REGEX_RULES} 件まで、AWS プリセットを含めて ${candidates.length} 件）`,
+    );
+  }
+  const unsupported = await findUnsupportedRegexes(candidates);
+  if (unsupported.length > 0) {
+    const labels = unsupported.map(({ entry, result }) => `${entry.label}（${result.reason}）`);
+    throw new Error(`ブロックルールにできない URL パターンがあります: ${labels.join(' / ')}`);
+  }
+}
+
+async function supportedBlockRules(rules) {
+  const candidates = blockRuleCandidates(rules);
+  const unsupported = new Set((await findUnsupportedRegexes(candidates)).map(({ entry }) => entry));
+  // 1 つでも通らない正規表現があると全体の登録が失敗するので、通らないものは除いて記録する。
+  // 保存時に確かめているので、通常はここで除かれるものはない。除いた URL も、遷移の検知による差し替えは効く。
+  for (const entry of unsupported) console.error(`[touch-id-gate] ブロックルールにできない URL: ${entry.label}`);
+  return candidates.filter(({ entry }) => !unsupported.has(entry));
+}
+
 // 常時ブロック。dynamic rule はブラウザ再起動後も残り、この service worker が止まっていても効く。
 async function installBlockRules() {
+  const blockRules = await supportedBlockRules(await getRules());
   const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
   await chrome.declarativeNetRequest.updateDynamicRules({
     removeRuleIds: existingRules.map((rule) => rule.id),
-    addRules: BLOCK_RULES.map((rule, index) => ({
+    addRules: blockRules.map(({ entry, resourceTypes }, index) => ({
       id: index + 1,
       priority: BLOCK_PRIORITY,
       action: { type: 'block' },
       condition: {
-        regexFilter: rule.pattern,
-        resourceTypes: rule.resourceTypes,
+        regexFilter: entry.pattern,
+        resourceTypes,
       },
     })),
   });
+}
+
+// 登録が重なるとルール ID がぶつかるので、順番に行う。
+// 戻り値は今回の登録の結果。失敗しても、次の登録は続けられるようにしておく。
+let installQueue = Promise.resolve();
+function reinstallBlockRules() {
+  const installation = installQueue.then(installBlockRules);
+  installQueue = installation.catch(logError('ブロックルールの登録に失敗'));
+  return installation;
 }
 
 // アラームは遅れることがあるので、期限は保存した時刻で判定する。期限切れならここで再ロックする。
@@ -95,13 +149,13 @@ async function showGate(tabId, targetUrl) {
 }
 
 async function redirectToGate(details) {
-  if (details.frameId !== 0 || !isGatedUrl(details.url)) return;
+  if (details.frameId !== 0 || !isGatedUrl(details.url, await getRules())) return;
   await showGate(details.tabId, details.url);
 }
 
-// ツールバーのボタン。一覧画面のままアクセスキーを表示したいときに、いま開いているタブを解除する。
+// ツールバーのボタン。一覧画面のままアクセスキーを表示したいときなどに、いま開いているタブを解除する。
 async function showGateForCurrentPage(tab) {
-  if (tab.id === undefined || !isUnlockableUrl(tab.url ?? '')) return;
+  if (tab.id === undefined || !isUnlockableUrl(tab.url ?? '', await getRules())) return;
   await showGate(tab.id, tab.url);
 }
 
@@ -111,9 +165,8 @@ async function issueChallenge(_message, tabId) {
   return { challenge };
 }
 
-async function unlockWithAssertion(message, tabId) {
-  if (!isUnlockableUrl(message.target)) throw new Error('遷移先が対象 URL ではありません');
-
+// このタブに発行したチャレンジへの署名を検証する。失敗したら例外を投げる。
+async function verifyTouchId(assertion, tabId) {
   const key = challengeKey(tabId);
   const stored = await chrome.storage.session.get(key);
   await chrome.storage.session.remove(key);
@@ -126,26 +179,61 @@ async function unlockWithAssertion(message, tabId) {
   await verifyAssertion({
     publicKeySpki: credential.publicKeySpki,
     algorithm: credential.algorithm,
-    assertion: message.assertion,
+    assertion,
     expectedChallenge,
     expectedOrigin: EXTENSION_ORIGIN,
     acceptedRpIds: ACCEPTED_RP_IDS,
   });
+}
 
+async function unlockWithAssertion(message, tabId) {
+  if (!isUnlockableUrl(message.target, await getRules())) throw new Error('遷移先が対象 URL ではありません');
+  await verifyTouchId(message.assertion, tabId);
   await unlockTab(tabId);
   await chrome.tabs.update(tabId, { url: message.target });
   return {};
 }
 
+// 対象 URL を外す操作でもあるので、設定の保存にも Touch ID を求める。
+async function saveSettingsWithAssertion(message, tabId) {
+  const lines = message.settings?.customPatterns;
+  if (!Array.isArray(lines)) throw new Error('設定の形式が不正です');
+  const { patterns, errors } = parseCustomPatterns(lines);
+  if (errors.length > 0) throw new Error(`書き方が正しくない URL パターンがあります: ${errors.join(' / ')}`);
+  const settings = { awsPreset: message.settings.awsPreset === true, customPatterns: patterns };
+  await assertEnforceable(buildRules(settings));
+  await verifyTouchId(message.assertion, tabId);
+  await storeSettings(settings);
+
+  // 保存の結果として、ブロックルールまで登録できたかを返す。
+  rulesPromise = null;
+  try {
+    await reinstallBlockRules();
+  } catch (error) {
+    throw new Error(`設定は保存しましたが、ブロックルールの登録に失敗しました: ${error.message}`);
+  }
+  return {};
+}
+
+// メッセージの種類ごとに、受け付ける送り主のページを決めておく。
 const MESSAGE_HANDLERS = {
-  challenge: issueChallenge,
-  unlock: unlockWithAssertion,
+  challenge: { handle: issueChallenge, pages: [GATE_PAGE_URL, OPTIONS_PAGE_URL] },
+  unlock: { handle: unlockWithAssertion, pages: [GATE_PAGE_URL] },
+  saveSettings: { handle: saveSettingsWithAssertion, pages: [OPTIONS_PAGE_URL] },
 };
 
 const logError = (context) => (error) => console.error(`[touch-id-gate] ${context}`, error);
 
+// 失敗は installQueue が記録するので、ここでは握りつぶす。
+const ignoreError = () => {};
+
 chrome.runtime.onInstalled.addListener(() => {
-  installBlockRules().catch(logError('ブロックルールの登録に失敗'));
+  reinstallBlockRules().catch(ignoreError);
+});
+
+onSettingsChanged(() => {
+  rulesPromise = null;
+  reinstallBlockRules().catch(ignoreError);
 });
 
 // ポータルは画面の切り替えで # だけが変わることがあるので、ページの読み込み以外の遷移も見る。
@@ -169,10 +257,11 @@ chrome.action.onClicked.addListener((tab) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const tabId = sender.tab?.id;
   const handler = MESSAGE_HANDLERS[message?.type];
-  const isFromGatePage = sender.id === chrome.runtime.id && sender.url?.startsWith(GATE_PAGE_URL);
-  if (!handler || !isFromGatePage || tabId === undefined) return false;
+  const isFromAllowedPage =
+    sender.id === chrome.runtime.id && handler?.pages.some((page) => sender.url?.startsWith(page));
+  if (!handler || !isFromAllowedPage || tabId === undefined) return false;
 
-  handler(message, tabId).then(
+  handler.handle(message, tabId).then(
     (result) => sendResponse({ ok: true, ...result }),
     (error) => {
       logError(`${message.type} の処理に失敗`)(error);

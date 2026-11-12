@@ -1,4 +1,4 @@
-import { isUnlockableUrl } from './config.js';
+import { isUnlockableUrl, loadRules } from './config.js';
 import { loadCredential, onCredentialChanged, registerCredential, requestAssertion } from './webauthn.js';
 
 const target = new URLSearchParams(location.search).get('target') ?? '';
@@ -83,18 +83,14 @@ registerButton.addEventListener('click', async () => {
   }
 });
 
-if (!isUnlockableUrl(target)) {
-  status.textContent = '遷移先が対象 URL ではないため、開けません。';
-} else {
-  loadCredential()
-    .then((credential) => {
-      showButtonsFor(credential);
-      if (!credential) status.textContent = NOT_REGISTERED_MESSAGE;
-    })
-    .catch((error) => {
-      console.error('[touch-id-gate] 登録状態の取得に失敗', error);
-      status.textContent = `登録状態を取得できませんでした: ${error.message}`;
-    });
+async function initialize() {
+  if (!isUnlockableUrl(target, await loadRules())) {
+    status.textContent = '遷移先が対象 URL ではないため、開けません。';
+    return;
+  }
+
+  showButtonsFor(await loadCredential());
+  if (unlockButton.hidden) status.textContent = NOT_REGISTERED_MESSAGE;
 
   // 設定ページなど別のタブで登録した場合も、ボタンを切り替える。
   onCredentialChanged((credential) => {
@@ -103,3 +99,8 @@ if (!isUnlockableUrl(target)) {
     status.textContent = credential ? '' : NOT_REGISTERED_MESSAGE;
   });
 }
+
+initialize().catch((error) => {
+  console.error('[touch-id-gate] ゲートページの準備に失敗', error);
+  status.textContent = `登録状態を取得できませんでした: ${error.message}`;
+});
