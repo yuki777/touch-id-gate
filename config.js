@@ -103,6 +103,7 @@ function normalizePath(path) {
 // - スキームは書いても書かなくてもよく、http と https の両方が対象になる。
 // - ホストの * はホスト名の一部（例: *.example.com, app-*.example.com）、パスの * は任意の文字列。
 // - パスは前方一致。パスを省くと、そのホストのすべてのページが対象になる。
+// - # 以降は書けない。
 export function patternToRegex(text) {
   const withoutScheme = text.trim().replace(/^(\*|https?):\/\//i, '');
   const hostEnd = withoutScheme.search(/[/?#]/);
@@ -114,6 +115,8 @@ export function patternToRegex(text) {
   if (!/^[a-z0-9.*-]+(:[0-9]+)?$/.test(host)) throw new Error('ホスト名に使えない文字があります');
   if (!/[a-z0-9]/.test(host.replace(/:[0-9]+$/, ''))) throw new Error('ホスト名を * だけにはできません');
   if (/\s/.test(path)) throw new Error('空白は使えません');
+  // # 以降は通信の URL に含まれず、ブロックルールで止められない（iframe で読み込めば差し替えも効かない）。
+  if (path.includes('#')) throw new Error('# 以降（フラグメント）は使えません');
 
   const pathRegex = path === '' ? '([/?#]|$)' : normalizePath(path).split('*').map(escapeRegex).join('.*');
   return `${SCHEME}${hostToRegex(host)}${portToRegex(host)}${pathRegex}`;
