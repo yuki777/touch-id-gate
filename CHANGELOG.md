@@ -1,0 +1,11 @@
+# Changelog
+
+## [0.2.1](https://github.com/yuki777/touch-id-gate/compare/0.2.0...0.2.1) - 2026-11-12
+
+- fix: Touch ID 未登録をエラーとして扱わず、登録を案内する by @yuki777 in https://github.com/yuki777/touch-id-gate/pull/1
+
+## [0.2.0](https://github.com/yuki777/touch-id-gate/compare/0.1.1...0.2.0) - 2026-11-12
+
+## [0.1.1](https://github.com/yuki777/touch-id-gate/compare/0.1.0...0.1.1) - 2026-11-12
+
+## [0.1.0](https://github.com/yuki777/touch-id-gate/commits/0.1.0) - 2026-11-12
