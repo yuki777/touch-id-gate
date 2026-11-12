@@ -1,5 +1,6 @@
 import {
   UNLOCK_MINUTES,
+  buildRules,
   isGatedUrl,
   isUnlockableUrl,
   loadRules,
@@ -32,21 +33,46 @@ const unlockExpiryKey = (tabId) => `unlockExpiresAt:${tabId}`;
 let rulesPromise = null;
 const getRules = () => (rulesPromise ??= loadRules());
 
-async function supportedBlockRules(rules) {
-  const candidates = [
-    ...rules.gatedNavigations.map((entry) => ({ entry, resourceTypes: FRAME_RESOURCE_TYPES })),
-    ...rules.credentialRequests.map((entry) => ({ entry, resourceTypes: ALL_RESOURCE_TYPES })),
-  ];
+// Chrome が登録を受け付ける正規表現ルールの上限。
+const MAX_REGEX_RULES = chrome.declarativeNetRequest.MAX_NUMBER_OF_REGEX_RULES ?? 1000;
+
+const blockRuleCandidates = (rules) => [
+  ...rules.gatedNavigations.map((entry) => ({ entry, resourceTypes: FRAME_RESOURCE_TYPES })),
+  ...rules.credentialRequests.map((entry) => ({ entry, resourceTypes: ALL_RESOURCE_TYPES })),
+];
+
+// ブロックルールにできない（RE2 で通らない、大きすぎる）正規表現と、その理由を返す。
+async function findUnsupportedRegexes(candidates) {
   const results = await Promise.all(
     candidates.map(({ entry }) => chrome.declarativeNetRequest.isRegexSupported({ regex: entry.pattern })),
   );
+  return candidates
+    .map(({ entry }, index) => ({ entry, result: results[index] }))
+    .filter(({ result }) => !result.isSupported);
+}
+
+// 保存する前に、その設定がブロックルールとして登録できることを確かめる。
+async function assertEnforceable(rules) {
+  const candidates = blockRuleCandidates(rules);
+  if (candidates.length > MAX_REGEX_RULES) {
+    throw new Error(
+      `対象 URL が多すぎます（ブロックルールは ${MAX_REGEX_RULES} 件まで、AWS プリセットを含めて ${candidates.length} 件）`,
+    );
+  }
+  const unsupported = await findUnsupportedRegexes(candidates);
+  if (unsupported.length > 0) {
+    const labels = unsupported.map(({ entry, result }) => `${entry.label}（${result.reason}）`);
+    throw new Error(`ブロックルールにできない URL パターンがあります: ${labels.join(' / ')}`);
+  }
+}
+
+async function supportedBlockRules(rules) {
+  const candidates = blockRuleCandidates(rules);
+  const unsupported = new Set((await findUnsupportedRegexes(candidates)).map(({ entry }) => entry));
   // 1 つでも通らない正規表現があると全体の登録が失敗するので、通らないものは除いて記録する。
-  // 除いた URL も、遷移の検知による差し替えは効く。
-  return candidates.filter(({ entry }, index) => {
-    if (results[index].isSupported) return true;
-    console.error(`[touch-id-gate] ブロックルールにできない URL: ${entry.label}（${results[index].reason}）`);
-    return false;
-  });
+  // 保存時に確かめているので、通常はここで除かれるものはない。除いた URL も、遷移の検知による差し替えは効く。
+  for (const entry of unsupported) console.error(`[touch-id-gate] ブロックルールにできない URL: ${entry.label}`);
+  return candidates.filter(({ entry }) => !unsupported.has(entry));
 }
 
 // 常時ブロック。dynamic rule はブラウザ再起動後も残り、この service worker が止まっていても効く。
@@ -68,10 +94,12 @@ async function installBlockRules() {
 }
 
 // 登録が重なるとルール ID がぶつかるので、順番に行う。
+// 戻り値は今回の登録の結果。失敗しても、次の登録は続けられるようにしておく。
 let installQueue = Promise.resolve();
 function reinstallBlockRules() {
-  installQueue = installQueue.then(installBlockRules).catch(logError('ブロックルールの登録に失敗'));
-  return installQueue;
+  const installation = installQueue.then(installBlockRules);
+  installQueue = installation.catch(logError('ブロックルールの登録に失敗'));
+  return installation;
 }
 
 // アラームは遅れることがあるので、期限は保存した時刻で判定する。期限切れならここで再ロックする。
@@ -172,8 +200,18 @@ async function saveSettingsWithAssertion(message, tabId) {
   if (!Array.isArray(lines)) throw new Error('設定の形式が不正です');
   const { patterns, errors } = parseCustomPatterns(lines);
   if (errors.length > 0) throw new Error(`書き方が正しくない URL パターンがあります: ${errors.join(' / ')}`);
+  const settings = { awsPreset: message.settings.awsPreset === true, customPatterns: patterns };
+  await assertEnforceable(buildRules(settings));
   await verifyTouchId(message.assertion, tabId);
-  await storeSettings({ awsPreset: message.settings.awsPreset === true, customPatterns: patterns });
+  await storeSettings(settings);
+
+  // 保存の結果として、ブロックルールまで登録できたかを返す。
+  rulesPromise = null;
+  try {
+    await reinstallBlockRules();
+  } catch (error) {
+    throw new Error(`設定は保存しましたが、ブロックルールの登録に失敗しました: ${error.message}`);
+  }
   return {};
 }
 
@@ -186,13 +224,16 @@ const MESSAGE_HANDLERS = {
 
 const logError = (context) => (error) => console.error(`[touch-id-gate] ${context}`, error);
 
+// 失敗は installQueue が記録するので、ここでは握りつぶす。
+const ignoreError = () => {};
+
 chrome.runtime.onInstalled.addListener(() => {
-  reinstallBlockRules();
+  reinstallBlockRules().catch(ignoreError);
 });
 
 onSettingsChanged(() => {
   rulesPromise = null;
-  reinstallBlockRules();
+  reinstallBlockRules().catch(ignoreError);
 });
 
 // ポータルは画面の切り替えで # だけが変わることがあるので、ページの読み込み以外の遷移も見る。

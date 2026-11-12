@@ -78,9 +78,25 @@ const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ホスト部の * はホスト名の中だけ（/ ? # : の手前まで）に一致させる。先頭の *. はサブドメインなしにも一致させる。
 function hostToRegex(host) {
-  const hasLeadingWildcard = host.startsWith('*.');
-  const body = (hasLeadingWildcard ? host.slice(2) : host).split('*').map(escapeRegex).join('[^/?#:]*');
+  const hostname = host.replace(/:[0-9]+$/, '');
+  const hasLeadingWildcard = hostname.startsWith('*.');
+  const body = (hasLeadingWildcard ? hostname.slice(2) : hostname).split('*').map(escapeRegex).join('[^/?#:]*');
   return hasLeadingWildcard ? `([^/?#:]*\\.)?${body}` : body;
+}
+
+// ブラウザは既定のポート（http の 80、https の 443）を URL から省くので、書かれていても省いた URL に一致させる。
+function portToRegex(host) {
+  const port = host.match(/:([0-9]+)$/)?.[1];
+  if (port === undefined) return '(:[0-9]+)?';
+  return port === '80' || port === '443' ? `(:${port})?` : `:${port}`;
+}
+
+// パス以降を、ブラウザが URL を書き出すときと同じ形にする（日本語などのパーセントエンコード、. や .. の解決）。
+// * は URL の中でそのまま残るので、ワイルドカードの位置は変わらない。
+function normalizePath(path) {
+  // new URL(path, base) だと // から始まるパスがホストとして解釈されるので、文字列でつなぐ。
+  const url = new URL(`https://placeholder.invalid${path}`);
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 // 設定ページで書く URL パターンを、ブロックルールと遷移の判定に使う正規表現にする。
@@ -91,15 +107,16 @@ export function patternToRegex(text) {
   const withoutScheme = text.trim().replace(/^(\*|https?):\/\//i, '');
   const hostEnd = withoutScheme.search(/[/?#]/);
   const host = (hostEnd === -1 ? withoutScheme : withoutScheme.slice(0, hostEnd)).toLowerCase();
-  const path = hostEnd === -1 ? '' : withoutScheme.slice(hostEnd);
+  // hostEnd が ? や # のとき、ブラウザは / を補うので、パスも / から始める。
+  const rest = hostEnd === -1 ? '' : withoutScheme.slice(hostEnd);
+  const path = rest === '' || rest.startsWith('/') ? rest : `/${rest}`;
 
   if (!/^[a-z0-9.*-]+(:[0-9]+)?$/.test(host)) throw new Error('ホスト名に使えない文字があります');
   if (!/[a-z0-9]/.test(host.replace(/:[0-9]+$/, ''))) throw new Error('ホスト名を * だけにはできません');
   if (/\s/.test(path)) throw new Error('空白は使えません');
 
-  const port = host.includes(':') ? '' : '(:[0-9]+)?';
-  const pathRegex = path === '' ? '([/?#]|$)' : path.split('*').map(escapeRegex).join('.*');
-  return `${SCHEME}${hostToRegex(host)}${port}${pathRegex}`;
+  const pathRegex = path === '' ? '([/?#]|$)' : normalizePath(path).split('*').map(escapeRegex).join('.*');
+  return `${SCHEME}${hostToRegex(host)}${portToRegex(host)}${pathRegex}`;
 }
 
 // 設定ページの入力（1 行に 1 つ）を検証する。空行と重複は除く。
