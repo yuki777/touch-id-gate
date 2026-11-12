@@ -1,5 +1,8 @@
 const CREDENTIAL_STORAGE_KEY = 'credential';
 const ES256_ALGORITHM = -7;
+const RS256_ALGORITHM = -257;
+// 登録時に認証器へ示す順。先頭ほど優先される。
+const SUPPORTED_ALGORITHMS = [ES256_ALGORITHM, RS256_ALGORITHM];
 const RP_ID_HASH_LENGTH = 32;
 const FLAG_USER_PRESENT = 0x01;
 const FLAG_USER_VERIFIED = 0x04;
@@ -37,7 +40,8 @@ export async function registerCredential() {
         displayName: 'Touch ID Gate',
       },
       challenge: fromBase64Url(randomChallenge()),
-      pubKeyCredParams: [{ type: 'public-key', alg: ES256_ALGORITHM }],
+      // Touch ID は ES256 を返す。RS256 も並べておかないと、Chrome が互換性の警告を出す。
+      pubKeyCredParams: SUPPORTED_ALGORITHMS.map((alg) => ({ type: 'public-key', alg })),
       authenticatorSelection: {
         authenticatorAttachment: 'platform',
         userVerification: 'required',
@@ -47,12 +51,14 @@ export async function registerCredential() {
       timeout: REQUEST_TIMEOUT_MS,
     },
   });
-  if (created.response.getPublicKeyAlgorithm() !== ES256_ALGORITHM) {
-    throw new Error('認証器が ES256 以外の鍵を返しました');
+  const algorithm = created.response.getPublicKeyAlgorithm();
+  if (!SUPPORTED_ALGORITHMS.includes(algorithm)) {
+    throw new Error(`認証器が対応していない鍵（アルゴリズム ${algorithm}）を返しました`);
   }
   const credential = {
     credentialId: toBase64Url(created.rawId),
     publicKeySpki: toBase64Url(created.response.getPublicKey()),
+    algorithm,
   };
   await chrome.storage.local.set({ [CREDENTIAL_STORAGE_KEY]: credential });
   return credential;
@@ -97,13 +103,37 @@ function derSignatureToRaw(der) {
   return Uint8Array.from([...r, ...s]);
 }
 
-// 検証に失敗したら例外を投げる。成功時は何も返さない。
+// COSE のアルゴリズム ID ごとの WebCrypto の指定。
+const VERIFIERS = {
+  [ES256_ALGORITHM]: {
+    importParams: { name: 'ECDSA', namedCurve: 'P-256' },
+    verifyParams: { name: 'ECDSA', hash: 'SHA-256' },
+    toWebCryptoSignature: derSignatureToRaw,
+  },
+  [RS256_ALGORITHM]: {
+    importParams: { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    verifyParams: { name: 'RSASSA-PKCS1-v1_5' },
+    toWebCryptoSignature: (signature) => signature,
+  },
+};
 async function matchesRpId(actualRpIdHash, rpId) {
   const expected = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rpId)));
   return actualRpIdHash.length === RP_ID_HASH_LENGTH && expected.every((byte, index) => byte === actualRpIdHash[index]);
 }
 
-export async function verifyAssertion({ publicKeySpki, assertion, expectedChallenge, expectedOrigin, acceptedRpIds }) {
+// 検証に失敗したら例外を投げる。成功時は何も返さない。
+// algorithm が無いのは ES256 だけに対応していた版で登録したクレデンシャル。
+export async function verifyAssertion({
+  publicKeySpki,
+  algorithm = ES256_ALGORITHM,
+  assertion, 
+  expectedChallenge,
+  expectedOrigin,
+  acceptedRpIds,
+}) {
+  const verifier = VERIFIERS[algorithm];
+  if (!verifier) throw new Error(`対応していない鍵のアルゴリズムです: ${algorithm}`);
+
   const authenticatorData = fromBase64Url(assertion.authenticatorData);
   const clientDataBytes = fromBase64Url(assertion.clientDataJSON);
   const clientData = JSON.parse(new TextDecoder().decode(clientDataBytes));
@@ -124,16 +154,16 @@ export async function verifyAssertion({ publicKeySpki, assertion, expectedChalle
   const publicKey = await crypto.subtle.importKey(
     'spki',
     fromBase64Url(publicKeySpki),
-    { name: 'ECDSA', namedCurve: 'P-256' },
+    verifier.importParams,
     false,
     ['verify'],
   );
   const clientDataHash = new Uint8Array(await crypto.subtle.digest('SHA-256', clientDataBytes));
   const signedData = Uint8Array.from([...authenticatorData, ...clientDataHash]);
   const isValid = await crypto.subtle.verify(
-    { name: 'ECDSA', hash: 'SHA-256' },
+    verifier.verifyParams,
     publicKey,
-    derSignatureToRaw(fromBase64Url(assertion.signature)),
+    verifier.toWebCryptoSignature(fromBase64Url(assertion.signature)),
     signedData,
   );
   if (!isValid) throw new Error('署名が不正です');
