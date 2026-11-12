@@ -1,0 +1,10 @@
+# tagpr の設定。https://github.com/Songmu/tagpr
+# main に push されるたびにリリース PR（manifest.json の version と CHANGELOG.md の更新）を作り、
+# それをマージするとタグと GitHub Release を作る。上げ幅は既定でパッチ。
+# リリース PR に minor / major ラベルを付けると上げ幅が変わる。
+[tagpr]
+	vPrefix = false
+	releaseBranch = main
+	versionFile = manifest.json
+	changelog = true
+	release = true

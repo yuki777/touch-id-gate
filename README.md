@@ -79,6 +79,10 @@ Chrome 122 以降（Chromium 系ブラウザ）と、Touch ID のある Mac が�
 
 外部への通信はありません。登録した公開鍵とクレデンシャル ID は `chrome.storage.local` に保存します。
 
+## リリース
+
+[tagpr](https://github.com/Songmu/tagpr) で行います。main に push されると、`manifest.json` の version と `CHANGELOG.md` を更新するリリース PR が作られます。そのリリース PR をマージすると、タグと GitHub Release が作られます。上げ幅は既定でパッチで、リリース PR に `minor` / `major` ラベルを付けると変えられます。
+
 ## ライセンス
 
 [MIT](LICENSE)
