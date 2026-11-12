@@ -1,4 +1,4 @@
-# SSO Touch ID Gate
+# Touch ID Gate
 
 AWS IAM Identity Center（旧 AWS SSO）のサインイン関連 URL を開く前に、Touch ID を要求する Chrome 拡張です。
 

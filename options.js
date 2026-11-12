@@ -28,7 +28,7 @@ registerButton.addEventListener('click', async () => {
     await registerCredential();
     status.textContent = '登録しました。';
   } catch (error) {
-    console.error('[sso-touchid-gate] 登録に失敗', error);
+    console.error('[touch-id-gate] 登録に失敗', error);
     status.textContent = `登録できませんでした: ${error.message}`;
   } finally {
     registerButton.disabled = false;
@@ -37,6 +37,6 @@ registerButton.addEventListener('click', async () => {
 });
 
 showState().catch((error) => {
-  console.error('[sso-touchid-gate] 状態の取得に失敗', error);
+  console.error('[touch-id-gate] 状態の取得に失敗', error);
   state.textContent = `状態を取得できませんでした: ${error.message}`;
 });

@@ -30,11 +30,11 @@ export async function loadCredential() {
 export async function registerCredential() {
   const created = await navigator.credentials.create({
     publicKey: {
-      rp: { name: 'SSO Touch ID Gate' },
+      rp: { name: 'Touch ID Gate' },
       user: {
         id: crypto.getRandomValues(new Uint8Array(16)),
-        name: 'sso-touchid-gate',
-        displayName: 'SSO Touch ID Gate',
+        name: 'touch-id-gate',
+        displayName: 'Touch ID Gate',
       },
       challenge: fromBase64Url(randomChallenge()),
       pubKeyCredParams: [{ type: 'public-key', alg: ES256_ALGORITHM }],

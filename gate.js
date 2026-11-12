@@ -37,7 +37,7 @@ unlockButton.addEventListener('click', async () => {
     await unlock();
     status.textContent = '確認できました。移動します。';
   } catch (error) {
-    console.error('[sso-touchid-gate] 解除に失敗', error);
+    console.error('[touch-id-gate] 解除に失敗', error);
     status.textContent = `開けませんでした: ${error.message}`;
     unlockButton.disabled = false;
   }

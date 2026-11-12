@@ -115,7 +115,7 @@ const MESSAGE_HANDLERS = {
   unlock: unlockWithAssertion,
 };
 
-const logError = (context) => (error) => console.error(`[sso-touchid-gate] ${context}`, error);
+const logError = (context) => (error) => console.error(`[touch-id-gate] ${context}`, error);
 
 chrome.runtime.onInstalled.addListener(() => {
   installBlockRules().catch(logError('ブロックルールの登録に失敗'));

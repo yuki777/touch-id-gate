@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "SSO Touch ID Gate",
+  "name": "Touch ID Gate",
   "version": "0.1.0",
   "description": "AWS IAM Identity Center のサインイン関連 URL を開く前に Touch ID を要求する",
   "minimum_chrome_version": "122",
