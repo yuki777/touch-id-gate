@@ -29,6 +29,14 @@ export async function loadCredential() {
   return stored[CREDENTIAL_STORAGE_KEY] ?? null;
 }
 
+// 登録が変わったら（別のタブで登録した場合も）新しい値で callback を呼ぶ。
+export function onCredentialChanged(callback) {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !(CREDENTIAL_STORAGE_KEY in changes)) return;
+    callback(changes[CREDENTIAL_STORAGE_KEY].newValue ?? null);
+  });
+}
+
 // 拡張ページから呼ぶ。RP ID は指定せず、既定値（拡張 ID）に任せる。
 export async function registerCredential() {
   const created = await navigator.credentials.create({
