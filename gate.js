@@ -1,4 +1,4 @@
-import { isGatedUrl } from './config.js';
+import { isUnlockableUrl } from './config.js';
 import { loadCredential, requestAssertion } from './webauthn.js';
 
 const target = new URLSearchParams(location.search).get('target') ?? '';
@@ -25,7 +25,7 @@ async function unlock() {
   await sendToBackground({ type: 'unlock', assertion, target });
 }
 
-if (!isGatedUrl(target)) {
+if (!isUnlockableUrl(target)) {
   unlockButton.disabled = true;
   status.textContent = '遷移先が対象 URL ではないため、開けません。';
 }

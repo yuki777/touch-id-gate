@@ -6,23 +6,40 @@ AWS IAM Identity Center（旧 AWS SSO）のサインイン関連 URL を開く�
 
 ## 動作
 
-1. 対象 URL を、declarativeNetRequest（ブラウザ側で通信を止める拡張 API）のルールで常にブロックします。
-2. 対象 URL へ移動しようとしたタブを、拡張の中間ページに差し替えます。
-3. 中間ページで WebAuthn（`userVerification: required`、端末内蔵の認証器のみ）を通すと、そのタブだけ 2 分間ブロックを外し、元の URL へ進みます。
-4. 2 分たつか、タブを閉じると、再びブロックします。
+1. 対象 URL へ移動しようとしたタブを、拡張の中間ページに差し替えます。
+2. 中間ページで WebAuthn（`userVerification: required`、端末内蔵の認証器のみ）を通すと、そのタブだけ 2 分間ブロックを外し、元の URL へ進みます。
+3. 2 分たつか、タブを閉じると、再びブロックします。
+
+差し替えとは別に、declarativeNetRequest（ブラウザ側で通信を止める拡張 API）のルールでも止めています。拡張の処理が間に合わなかった場合でも、Touch ID を通していないタブからは通信が出ません。
 
 ## 対象 URL
 
 リージョンとサブドメインは任意です。定義は [config.js](config.js) にあります。
 
+### 開く前に必ず Touch ID を求める URL
+
+- `oidc.*.amazonaws.com/authorize*`（`aws sso login` の認可画面）
+- `oidc.*.api.aws/authorize*`
+- `device.sso.*.amazonaws.com/*`（デバイスコードの確認画面）
+
+### AWS access portal
+
 - `*.awsapps.com/start*`
 - `*.portal.*.app.aws/*`
 - `*.*.portal.amazonaws.com/*`
-- `oidc.*.amazonaws.com/authorize*`
-- `oidc.*.api.aws/authorize*`
-- `device.sso.*.amazonaws.com/*`
 
-URL の `#` 以降はネットワーク層に届かないため、access portal は `/start` 配下をまるごと対象にしています。
+一覧画面（`/start/`、`/start/#/`、`/start/#/?tab=accounts`、`/start/#/?tab=applications`）だけは Touch ID なしで開けます。それ以外の画面（`/start/#/console` など）は Touch ID を求めます。URL の `#` 以降はネットワーク層に届かないため、ここは通信のブロックではなく、遷移の検知で判定しています。
+
+### 認証情報を取り出す通信
+
+- `portal.sso.*.amazonaws.com/federation/*`
+- `portal.sso.*.api.aws/federation/*`
+- `oidc.*.amazonaws.com/device_authorization/*`
+- `oidc.*.api.aws/device_authorization/*`
+
+access portal がコンソールのサインイン URL やアクセスキーを取り出すときの通信と、デバイスコードを承認するときの通信です。画面を移動せずに呼べるので、Touch ID を通したタブ以外では通信そのものを止めます。
+
+一覧画面でアクセスキーを表示したいときは、ツールバーの拡張のボタンを押すと、いま開いているタブで Touch ID を求め、通ればそのタブを 2 分間解除します。
 
 ## インストール
 
@@ -40,8 +57,9 @@ Chrome 122 以降（Chromium 系ブラウザ）と、Touch ID のある Mac が�
 この拡張は、ブラウザ上の操作に確認を 1 段はさむだけです。次の経路は防げません。
 
 - 拡張の無効化や削除、別プロファイル、シークレットウィンドウ（拡張を許可していない場合）、別のブラウザ
-- 解除してから 2 分以内の、同じタブでの操作
-- すでに開いている access portal のタブでの操作
+- 解除してから 2 分以内の、同じタブでの操作。再ロックはブラウザのアラームで行うため、アラームが遅れると、その分だけ解除が長く残ります
+- access portal の一覧画面に出る情報（アカウント名、アカウント ID、ロール名）の閲覧
+- access portal の中で画面が切り替わった直後の一瞬（差し替えは切り替えの検知後に行うため）
 - OS のユーザー確認で、Touch ID の代わりに Mac のログインパスワードを入力すること
 - ブラウザ内蔵の AI アシスタントなど、拡張のルールを通らずにページを開く仕組み（未確認）
 - ブラウザを使わない経路（すでに発行済みの認証情報やトークンの利用など）

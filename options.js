@@ -1,4 +1,4 @@
-import { GATED_URLS } from './config.js';
+import { CREDENTIAL_REQUESTS, GATED_NAVIGATIONS, PORTAL_SITES } from './config.js';
 import { loadCredential, registerCredential } from './webauthn.js';
 
 const state = document.getElementById('state');
@@ -13,10 +13,16 @@ async function showState() {
   registerButton.textContent = credential ? 'Touch ID を登録し直す' : 'Touch ID を登録する';
 }
 
+const GATED_LABELS = [
+  ...GATED_NAVIGATIONS.map((entry) => entry.label),
+  ...PORTAL_SITES.map((entry) => `${entry.label}（一覧画面を除く）`),
+  ...CREDENTIAL_REQUESTS.map((entry) => `${entry.label}（通信）`),
+];
+
 document.getElementById('gated-urls').append(
-  ...GATED_URLS.map((gated) => {
+  ...GATED_LABELS.map((label) => {
     const item = document.createElement('li');
-    item.textContent = gated.label;
+    item.textContent = label;
     return item;
   }),
 );

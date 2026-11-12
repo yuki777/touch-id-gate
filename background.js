@@ -1,9 +1,25 @@
-import { GATED_URLS, UNLOCK_MINUTES, isGatedUrl } from './config.js';
+import {
+  CREDENTIAL_REQUESTS,
+  GATED_NAVIGATIONS,
+  PORTAL_SITES,
+  UNLOCK_MINUTES,
+  isGatedUrl,
+  isUnlockableUrl,
+} from './config.js';
 import { loadCredential, randomChallenge, verifyAssertion } from './webauthn.js';
 
 const BLOCK_PRIORITY = 1;
 const ALLOW_PRIORITY = 2;
 const FRAME_RESOURCE_TYPES = ['main_frame', 'sub_frame'];
+// 認証情報の通信はページ内の fetch で呼ばれるので、画面遷移以外の種類もすべて止める。
+const ALL_RESOURCE_TYPES = Object.values(chrome.declarativeNetRequest.ResourceType);
+const BLOCK_RULES = [
+  ...GATED_NAVIGATIONS.map((entry) => ({ pattern: entry.pattern, resourceTypes: FRAME_RESOURCE_TYPES })),
+  ...CREDENTIAL_REQUESTS.map((entry) => ({ pattern: entry.pattern, resourceTypes: ALL_RESOURCE_TYPES })),
+];
+const WATCHED_NAVIGATIONS = {
+  url: [...GATED_NAVIGATIONS, ...PORTAL_SITES].map((entry) => ({ urlMatches: entry.pattern })),
+};
 const RELOCK_ALARM_PREFIX = 'relock:';
 const GATE_PAGE_URL = chrome.runtime.getURL('gate.html');
 
@@ -20,13 +36,13 @@ async function installBlockRules() {
   const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
   await chrome.declarativeNetRequest.updateDynamicRules({
     removeRuleIds: existingRules.map((rule) => rule.id),
-    addRules: GATED_URLS.map((gated, index) => ({
+    addRules: BLOCK_RULES.map((rule, index) => ({
       id: index + 1,
       priority: BLOCK_PRIORITY,
       action: { type: 'block' },
       condition: {
-        regexFilter: gated.pattern,
-        resourceTypes: FRAME_RESOURCE_TYPES,
+        regexFilter: rule.pattern,
+        resourceTypes: rule.resourceTypes,
       },
     })),
   });
@@ -54,7 +70,7 @@ async function unlockTab(tabId) {
         action: { type: 'allow' },
         condition: {
           tabIds: [tabId],
-          resourceTypes: FRAME_RESOURCE_TYPES,
+          resourceTypes: ALL_RESOURCE_TYPES,
         },
       },
     ],
@@ -71,12 +87,22 @@ async function relockTab(tabId) {
   await chrome.alarms.clear(`${RELOCK_ALARM_PREFIX}${tabId}`);
 }
 
+async function showGate(tabId, targetUrl) {
+  if (await isTabUnlocked(tabId)) return;
+  await chrome.tabs.update(tabId, {
+    url: `${GATE_PAGE_URL}?target=${encodeURIComponent(targetUrl)}`,
+  });
+}
+
 async function redirectToGate(details) {
   if (details.frameId !== 0 || !isGatedUrl(details.url)) return;
-  if (await isTabUnlocked(details.tabId)) return;
-  await chrome.tabs.update(details.tabId, {
-    url: `${GATE_PAGE_URL}?target=${encodeURIComponent(details.url)}`,
-  });
+  await showGate(details.tabId, details.url);
+}
+
+// ツールバーのボタン。一覧画面のままアクセスキーを表示したいときに、いま開いているタブを解除する。
+async function showGateForCurrentPage(tab) {
+  if (tab.id === undefined || !isUnlockableUrl(tab.url ?? '')) return;
+  await showGate(tab.id, tab.url);
 }
 
 async function issueChallenge(_message, tabId) {
@@ -86,7 +112,7 @@ async function issueChallenge(_message, tabId) {
 }
 
 async function unlockWithAssertion(message, tabId) {
-  if (!isGatedUrl(message.target)) throw new Error('遷移先が対象 URL ではありません');
+  if (!isUnlockableUrl(message.target)) throw new Error('遷移先が対象 URL ではありません');
 
   const key = challengeKey(tabId);
   const stored = await chrome.storage.session.get(key);
@@ -121,14 +147,23 @@ chrome.runtime.onInstalled.addListener(() => {
   installBlockRules().catch(logError('ブロックルールの登録に失敗'));
 });
 
-chrome.webNavigation.onBeforeNavigate.addListener(
-  (details) => {
+// ポータルは画面の切り替えで # だけが変わることがあるので、ページの読み込み以外の遷移も見る。
+// onCommitted は、対象外の URL からリダイレクトで着いた場合の最終 URL を拾うために必要。
+const NAVIGATION_EVENTS = [
+  chrome.webNavigation.onBeforeNavigate,
+  chrome.webNavigation.onCommitted,
+  chrome.webNavigation.onReferenceFragmentUpdated,
+  chrome.webNavigation.onHistoryStateUpdated,
+];
+for (const navigationEvent of NAVIGATION_EVENTS) {
+  navigationEvent.addListener((details) => {
     redirectToGate(details).catch(logError('ゲートページへの差し替えに失敗'));
-  },
-  {
-    url: GATED_URLS.map((gated) => ({ urlMatches: gated.pattern })),
-  },
-);
+  }, WATCHED_NAVIGATIONS);
+}
+
+chrome.action.onClicked.addListener((tab) => {
+  showGateForCurrentPage(tab).catch(logError('ゲートページの表示に失敗'));
+});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const tabId = sender.tab?.id;
