@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>SSO Touch ID Gate</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Touch ID が必要です</h1>
+    <p>次の URL は、Touch ID で本人確認をしてから開きます。</p>
+    <p id="target" class="url"></p>
+    <button id="unlock" type="button" autofocus>Touch ID で開く</button>
+    <button id="open-options" type="button" class="secondary" hidden>Touch ID を登録する</button>
+    <p id="status" role="status"></p>
+  </main>
+  <script type="module" src="gate.js"></script>
+</body>
+</html>
