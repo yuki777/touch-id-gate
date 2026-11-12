@@ -125,6 +125,7 @@ async function unlockWithAssertion(message, tabId) {
 
   await verifyAssertion({
     publicKeySpki: credential.publicKeySpki,
+    algorithm: credential.algorithm,
     assertion: message.assertion,
     expectedChallenge,
     expectedOrigin: EXTENSION_ORIGIN,
