@@ -16,8 +16,12 @@ export const DEFAULT_SETTINGS = Object.freeze({ lines: [] });
 // 0.3 までは AWS の対象 URL が最初から有効だったので、保存された設定が無い場合も AWS の行を入れる。
 // 0.3 までは、追加した URL パターンが AWS の一覧画面の例外より優先だった。いまは例外が優先なので、
 // 追加した URL パターンと重なる例外の行は入れず、Touch ID を求めていたページが外れないようにする。
+// 0.3 までは「all:8080/admin」が all というホストのポート 8080 を指した。いまは行頭の all: が別の意味なので、
+// スキームを付けて、同じ URL を指すようにする（スキームを付けても、http と https の両方が対象になる）。
+const escapeLegacyPattern = (pattern) => (ALL_REQUESTS_PREFIX.test(pattern.trim()) ? `http://${pattern.trim()}` : pattern);
+
 export function convertLegacySettings(stored) {
-  const customPatterns = Array.isArray(stored?.customPatterns) ? stored.customPatterns : [];
+  const customPatterns = Array.isArray(stored?.customPatterns) ? stored.customPatterns.map(escapeLegacyPattern) : [];
   const customGates = customPatterns.flatMap((line) => {
     try {
       const parsed = parseLine(line);

@@ -164,3 +164,11 @@ test('0.3 までに追加した URL パターンと重なる AWS の例外は、
     assert.deepEqual(gatedAfterMigration([pattern]), { ownPortalList: false, otherPortalList: false }, pattern);
   }
 });
+
+test('0.3 までの「all というホスト + ポート」のパターンは、移し替えても同じ URL を指す', () => {
+  const settings = convertLegacySettings({ awsPreset: false, customPatterns: ['all:8080/admin', 'example.com'] });
+  assert.deepEqual(settings.lines, ['http://all:8080/admin', 'example.com']);
+  const rules = buildRules(settings);
+  assert.equal(isGatedUrl('https://all:8080/admin/x', rules), true);
+  assert.equal(rules.gates.some((gate) => gate.blocksAllRequests), false);
+});
