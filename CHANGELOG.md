@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.5.0](https://github.com/yuki777/touch-id-gate/compare/0.4.0...0.5.0) - 2026-11-13
+
+- feat: 名前を URL Gate に変え、Chrome Web Store に出す準備をする by @yuki777 in https://github.com/yuki777/touch-id-gate/pull/9
+
 ## [0.4.0](https://github.com/yuki777/touch-id-gate/compare/0.3.0...0.4.0) - 2026-11-13
 
 - feat: AWS 固有の処理をなくし、例外と通信のブロックを設定の行として書けるようにする by @yuki777 in https://github.com/yuki777/touch-id-gate/pull/7
