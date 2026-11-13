@@ -17,6 +17,16 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - uses: Songmu/tagpr@047aec4b6c0ce166f52958b5a97f5a3d927fd65b # v1.22.0
+      - id: tagpr
+        uses: Songmu/tagpr@047aec4b6c0ce166f52958b5a97f5a3d927fd65b # v1.22.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # リリースを作ったときだけ、Chrome Web Store に提出する zip を GitHub Release に付ける。
+      - name: 提出用の zip を GitHub Release に付ける
+        if: steps.tagpr.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tagpr.outputs.tag }}
+        run: |
+          zip_path="$(node scripts/package.mjs)"
+          gh release upload "$TAG" "$zip_path" --clobber

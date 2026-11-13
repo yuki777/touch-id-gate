@@ -41,11 +41,11 @@ export function onCredentialChanged(callback) {
 export async function registerCredential() {
   const created = await navigator.credentials.create({
     publicKey: {
-      rp: { name: 'Touch ID Gate' },
+      rp: { name: 'URL Gate' },
       user: {
         id: crypto.getRandomValues(new Uint8Array(16)),
-        name: 'touch-id-gate',
-        displayName: 'Touch ID Gate',
+        name: 'url-gate',
+        displayName: 'URL Gate',
       },
       challenge: fromBase64Url(randomChallenge()),
       // Touch ID は ES256 を返す。RS256 も並べておかないと、Chrome が互換性の警告を出す。
