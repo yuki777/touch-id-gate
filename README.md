@@ -1,4 +1,4 @@
-# Touch ID Gate
+# URL Gate
 
 指定した URL を開く前に、Touch ID を要求する Chrome 拡張です。
 
@@ -110,7 +110,7 @@ Chrome 122 以降（Chromium 系ブラウザ）と、Touch ID のある Mac が�
 1. このリポジトリを clone するか、zip で取得して展開します。
 2. `chrome://extensions` を開き、「デベロッパー モード」を有効にします。
 3. 「パッケージ化されていない拡張機能を読み込む」で、このフォルダを選びます。
-4. 拡張の「詳細」→「拡張機能のオプション」を開き、「Touch ID を登録する」を押します。
+4. インストールすると設定ページが開くので、「Touch ID を登録する」を押します（あとから開くときは、拡張の「詳細」→「拡張機能のオプション」です）。
 5. 同じページで、対象にする URL を書いて保存します。
 
 更新するときは、新しいファイルに置き換えてから、`chrome://extensions` でこの拡張の再読み込みボタンを押します。
@@ -147,13 +147,15 @@ Chrome 122 以降（Chromium 系ブラウザ）と、Touch ID のある Mac が�
 | `webauthn.js` | Touch ID の登録、認証要求、署名の検証 |
 | `gate.html` / `gate.js` | 中間ページ |
 | `options.html` / `options.js` | 設定ページ（Touch ID の登録、対象 URL の設定） |
+| `icons/` | アイコン。`icon.svg` が元の絵で、PNG はそれを書き出したものです |
+| `scripts/package.mjs` | Chrome Web Store に提出する zip を `dist/` に作ります（`node scripts/package.mjs`） |
 | `test/` | 設定の行の解釈のテスト（`node --test` で実行） |
 
-外部への通信はありません。登録した公開鍵とクレデンシャル ID、対象 URL の設定は `chrome.storage.local` に保存します。
+外部への通信はありません。登録した公開鍵とクレデンシャル ID、対象 URL の設定は `chrome.storage.local` に保存します。詳しくは [プライバシーポリシー](PRIVACY.md) にあります。
 
 ## リリース
 
-[tagpr](https://github.com/Songmu/tagpr) で行います。main に push されると、`manifest.json` の version と `CHANGELOG.md` を更新するリリース PR が作られます。そのリリース PR をマージすると、タグと GitHub Release が作られます。上げ幅は既定でパッチです。リリース PR に `tagpr:minor` / `tagpr:major` ラベルを付けるか、リリースに含まれる PR に `minor` / `major` ラベルを付けておくと変えられます。リリース PR の `manifest.json` の version を直接書き換えると、それが優先されます。
+[tagpr](https://github.com/Songmu/tagpr) で行います。main に push されると、`manifest.json` の version と `CHANGELOG.md` を更新するリリース PR が作られます。そのリリース PR をマージすると、タグと GitHub Release が作られ、Chrome Web Store に提出する zip（`url-gate-<version>.zip`）が GitHub Release に付きます。この zip は、拡張の動作に要らないファイルと `manifest.json` の `key` を除いたものです。上げ幅は既定でパッチです。リリース PR に `tagpr:minor` / `tagpr:major` ラベルを付けるか、リリースに含まれる PR に `minor` / `major` ラベルを付けておくと変えられます。リリース PR の `manifest.json` の version を直接書き換えると、それが優先されます。
 
 ## ライセンス
 

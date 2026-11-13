@@ -267,9 +267,13 @@ const MESSAGE_HANDLERS = {
   saveSettings: { handle: saveSettingsWithAssertion, pages: [OPTIONS_PAGE_URL] },
 };
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(({ reason }) => {
   prepared = prepared.then(prepare).catch(logError('インストール後の準備に失敗'));
   rulesPromise = null;
+  // インストールしただけでは何も止めないので、最初に設定ページ（Touch ID の登録と対象 URL）を開く。
+  if (reason === chrome.runtime.OnInstalledReason.INSTALL) {
+    chrome.runtime.openOptionsPage().catch(logError('設定ページを開けませんでした'));
+  }
 });
 
 onSettingsChanged(() => {
