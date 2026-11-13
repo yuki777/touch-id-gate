@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.1](https://github.com/yuki777/url-gate/compare/0.5.0...0.5.1) - 2026-11-13
+
+- docs: all: の意味と使いどころを説明し、リポジトリ名の変更に URL を合わせる by @yuki777 in https://github.com/yuki777/url-gate/pull/11
+- docs: ツールバーのボタンをいつ使うのかを README に書く by @yuki777 in https://github.com/yuki777/url-gate/pull/13
+
 ## [0.5.0](https://github.com/yuki777/touch-id-gate/compare/0.4.0...0.5.0) - 2026-11-13
 
 - feat: 名前を URL Gate に変え、Chrome Web Store に出す準備をする by @yuki777 in https://github.com/yuki777/touch-id-gate/pull/9
