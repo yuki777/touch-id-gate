@@ -1,19 +1,22 @@
 import {
   UNLOCK_MINUTES,
   buildRules,
+  initializeSettings,
   isGatedUrl,
   isUnlockableUrl,
   loadRules,
   onSettingsChanged,
-  parseCustomPatterns,
+  parseLines,
   storeSettings,
 } from './config.js';
 import { loadCredential, randomChallenge, verifyAssertion } from './webauthn.js';
 
+// 優先度の高いルールが勝つ。対象 URL のブロック < 例外の許可 < Touch ID を通したタブの許可。
 const BLOCK_PRIORITY = 1;
-const ALLOW_PRIORITY = 2;
+const EXCEPTION_PRIORITY = 2;
+const UNLOCK_PRIORITY = 3;
 const FRAME_RESOURCE_TYPES = ['main_frame', 'sub_frame'];
-// 認証情報の通信はページ内の fetch で呼ばれるので、画面遷移以外の種類もすべて止める。
+// 「通信も止める」対象 URL はページ内の fetch でも呼ばれるので、画面遷移以外の種類もすべて止める。
 const ALL_RESOURCE_TYPES = Object.values(chrome.declarativeNetRequest.ResourceType);
 // 対象 URL は設定で変わるので、遷移はすべて受け取ってから判定する。
 const WATCHED_NAVIGATIONS = { url: [{ schemes: ['http', 'https'] }] };
@@ -29,35 +32,55 @@ const ACCEPTED_RP_IDS = [EXTENSION_ORIGIN, chrome.runtime.id];
 const challengeKey = (tabId) => `challenge:${tabId}`;
 const unlockExpiryKey = (tabId) => `unlockExpiresAt:${tabId}`;
 
-// 設定から作った対象 URL。service worker が起きている間はキャッシュし、設定が変わったら作り直す。
-let rulesPromise = null;
-const getRules = () => (rulesPromise ??= loadRules());
+const PREPARED_VERSION_KEY = 'preparedVersion';
+const EXTENSION_VERSION = chrome.runtime.getManifest().version;
+
+const logError = (context) => (error) => console.error(`[touch-id-gate] ${context}`, error);
+
+// 失敗は installQueue が記録するので、ここでは握りつぶす。
+const ignoreError = () => {};
 
 // Chrome が登録を受け付ける正規表現ルールの上限。
 const MAX_REGEX_RULES = chrome.declarativeNetRequest.MAX_NUMBER_OF_REGEX_RULES ?? 1000;
 
-const blockRuleCandidates = (rules) => [
-  ...rules.gatedNavigations.map((entry) => ({ entry, resourceTypes: FRAME_RESOURCE_TYPES })),
-  ...rules.credentialRequests.map((entry) => ({ entry, resourceTypes: ALL_RESOURCE_TYPES })),
-];
+// 設定から作る通信のルール。対象 URL はブロックし、例外はページを開く操作だけ許可する。
+// 例外は # 以降だけが違う行が並ぶことがあるので、同じ正規表現は 1 つにまとめる。
+function networkRuleCandidates(rules) {
+  const exceptionsByPattern = new Map(rules.exceptions.map((entry) => [entry.pattern, entry]));
+  return [
+    ...rules.gates.map((entry) => ({
+      entry,
+      priority: BLOCK_PRIORITY,
+      actionType: 'block',
+      resourceTypes: entry.blocksAllRequests ? ALL_RESOURCE_TYPES : FRAME_RESOURCE_TYPES,
+      isCaseSensitive: false,
+    })),
+    ...[...exceptionsByPattern.values()].map((entry) => ({
+      entry,
+      priority: EXCEPTION_PRIORITY,
+      actionType: 'allow',
+      resourceTypes: FRAME_RESOURCE_TYPES,
+      isCaseSensitive: true,
+    })),
+  ];
+}
 
-// ブロックルールにできない（RE2 で通らない、大きすぎる）正規表現と、その理由を返す。
+const isRegexSupported = ({ entry, isCaseSensitive }) =>
+  chrome.declarativeNetRequest.isRegexSupported({ regex: entry.pattern, isCaseSensitive });
+
+// ルールにできない（RE2 で通らない、大きすぎる）正規表現と、その理由を返す。
 async function findUnsupportedRegexes(candidates) {
-  const results = await Promise.all(
-    candidates.map(({ entry }) => chrome.declarativeNetRequest.isRegexSupported({ regex: entry.pattern })),
-  );
+  const results = await Promise.all(candidates.map(isRegexSupported));
   return candidates
     .map(({ entry }, index) => ({ entry, result: results[index] }))
     .filter(({ result }) => !result.isSupported);
 }
 
-// 保存する前に、その設定がブロックルールとして登録できることを確かめる。
+// 保存する前に、その設定が通信のルールとして登録できることを確かめる。
 async function assertEnforceable(rules) {
-  const candidates = blockRuleCandidates(rules);
+  const candidates = networkRuleCandidates(rules);
   if (candidates.length > MAX_REGEX_RULES) {
-    throw new Error(
-      `対象 URL が多すぎます（ブロックルールは ${MAX_REGEX_RULES} 件まで、AWS プリセットを含めて ${candidates.length} 件）`,
-    );
+    throw new Error(`対象 URL と例外が多すぎます（${MAX_REGEX_RULES} 件まで、いまは ${candidates.length} 件）`);
   }
   const unsupported = await findUnsupportedRegexes(candidates);
   if (unsupported.length > 0) {
@@ -66,27 +89,28 @@ async function assertEnforceable(rules) {
   }
 }
 
-async function supportedBlockRules(rules) {
-  const candidates = blockRuleCandidates(rules);
+async function supportedNetworkRules(rules) {
+  const candidates = networkRuleCandidates(rules);
   const unsupported = new Set((await findUnsupportedRegexes(candidates)).map(({ entry }) => entry));
   // 1 つでも通らない正規表現があると全体の登録が失敗するので、通らないものは除いて記録する。
-  // 保存時に確かめているので、通常はここで除かれるものはない。除いた URL も、遷移の検知による差し替えは効く。
+  // 保存時に確かめているので、通常はここで除かれるものはない。除いた対象 URL も、遷移の検知による差し替えは効く。
   for (const entry of unsupported) console.error(`[touch-id-gate] ブロックルールにできない URL: ${entry.label}`);
   return candidates.filter(({ entry }) => !unsupported.has(entry));
 }
 
 // 常時ブロック。dynamic rule はブラウザ再起動後も残り、この service worker が止まっていても効く。
 async function installBlockRules() {
-  const blockRules = await supportedBlockRules(await getRules());
+  const networkRules = await supportedNetworkRules(await loadRules());
   const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
   await chrome.declarativeNetRequest.updateDynamicRules({
     removeRuleIds: existingRules.map((rule) => rule.id),
-    addRules: blockRules.map(({ entry, resourceTypes }, index) => ({
+    addRules: networkRules.map(({ entry, priority, actionType, resourceTypes, isCaseSensitive }, index) => ({
       id: index + 1,
-      priority: BLOCK_PRIORITY,
-      action: { type: 'block' },
+      priority,
+      action: { type: actionType },
       condition: {
         regexFilter: entry.pattern,
+        isUrlFilterCaseSensitive: isCaseSensitive,
         resourceTypes,
       },
     })),
@@ -101,6 +125,28 @@ function reinstallBlockRules() {
   installQueue = installation.catch(logError('ブロックルールの登録に失敗'));
   return installation;
 }
+
+// インストールや更新のあとに、設定をいまの形にそろえ、ブロックルールを作り直す。
+async function prepare() {
+  const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
+  await initializeSettings({ hadRulesInstalled: existingRules.length > 0 });
+  await reinstallBlockRules();
+  await chrome.storage.local.set({ [PREPARED_VERSION_KEY]: EXTENSION_VERSION });
+}
+
+// onInstalled の処理が終わる前に service worker が止まると、準備が済まないまま残る。
+// それに備えて、service worker が起きるたびに、いまの版で準備を済ませたかを確かめる。
+async function prepareIfVersionChanged() {
+  const stored = await chrome.storage.local.get(PREPARED_VERSION_KEY);
+  if (stored[PREPARED_VERSION_KEY] !== EXTENSION_VERSION) await prepare();
+}
+
+let prepared = prepareIfVersionChanged().catch(logError('起動時の準備に失敗'));
+
+// 設定から作った対象 URL。service worker が起きている間はキャッシュし、設定が変わったら作り直す。
+// 準備（設定の移し替え）が済んでから読む。
+let rulesPromise = null;
+const getRules = () => (rulesPromise ??= prepared.then(loadRules));
 
 // アラームは遅れることがあるので、期限は保存した時刻で判定する。期限切れならここで再ロックする。
 async function isTabUnlocked(tabId) {
@@ -120,7 +166,7 @@ async function unlockTab(tabId) {
     addRules: [
       {
         id: tabId,
-        priority: ALLOW_PRIORITY,
+        priority: UNLOCK_PRIORITY,
         action: { type: 'allow' },
         condition: {
           tabIds: [tabId],
@@ -153,7 +199,7 @@ async function redirectToGate(details) {
   await showGate(details.tabId, details.url);
 }
 
-// ツールバーのボタン。一覧画面のままアクセスキーを表示したいときなどに、いま開いているタブを解除する。
+// ツールバーのボタン。例外のページを開いたまま、止めている通信を使いたいときなどに、いま開いているタブを解除する。
 async function showGateForCurrentPage(tab) {
   if (tab.id === undefined || !isUnlockableUrl(tab.url ?? '', await getRules())) return;
   await showGate(tab.id, tab.url);
@@ -196,11 +242,10 @@ async function unlockWithAssertion(message, tabId) {
 
 // 対象 URL を外す操作でもあるので、設定の保存にも Touch ID を求める。
 async function saveSettingsWithAssertion(message, tabId) {
-  const lines = message.settings?.customPatterns;
-  if (!Array.isArray(lines)) throw new Error('設定の形式が不正です');
-  const { patterns, errors } = parseCustomPatterns(lines);
-  if (errors.length > 0) throw new Error(`書き方が正しくない URL パターンがあります: ${errors.join(' / ')}`);
-  const settings = { awsPreset: message.settings.awsPreset === true, customPatterns: patterns };
+  if (!Array.isArray(message.settings?.lines)) throw new Error('設定の形式が不正です');
+  const { lines, errors } = parseLines(message.settings.lines);
+  if (errors.length > 0) throw new Error(`書き方が正しくない行があります: ${errors.join(' / ')}`);
+  const settings = { lines };
   await assertEnforceable(buildRules(settings));
   await verifyTouchId(message.assertion, tabId);
   await storeSettings(settings);
@@ -222,13 +267,9 @@ const MESSAGE_HANDLERS = {
   saveSettings: { handle: saveSettingsWithAssertion, pages: [OPTIONS_PAGE_URL] },
 };
 
-const logError = (context) => (error) => console.error(`[touch-id-gate] ${context}`, error);
-
-// 失敗は installQueue が記録するので、ここでは握りつぶす。
-const ignoreError = () => {};
-
 chrome.runtime.onInstalled.addListener(() => {
-  reinstallBlockRules().catch(ignoreError);
+  prepared = prepared.then(prepare).catch(logError('インストール後の準備に失敗'));
+  rulesPromise = null;
 });
 
 onSettingsChanged(() => {
@@ -236,7 +277,7 @@ onSettingsChanged(() => {
   reinstallBlockRules().catch(ignoreError);
 });
 
-// ポータルは画面の切り替えで # だけが変わることがあるので、ページの読み込み以外の遷移も見る。
+// 画面の切り替えで # だけが変わるサイトがあるので、ページの読み込み以外の遷移も見る。
 // onCommitted は、対象外の URL からリダイレクトで着いた場合の最終 URL を拾うために必要。
 const NAVIGATION_EVENTS = [
   chrome.webNavigation.onBeforeNavigate,
