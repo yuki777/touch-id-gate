@@ -23,7 +23,7 @@
     <h3>行の種類</h3>
     <ul class="hint">
       <li><code>example.com/admin</code>: ページを開く操作（画面の遷移と iframe の読み込み）を止めます。</li>
-      <li><code>all:api.example.com/token</code>: 行頭に <code>all:</code> を付けると、ページ内のスクリプトからの通信も止めます。</li>
+      <li><code>all:api.example.com/token</code>: 行頭に <code>all:</code>（すべての通信）を付けると、ページを開く操作に加えて、ページの中からの通信（スクリプトの fetch など）も止めます。Touch ID を通したタブからだけ通信できます。</li>
       <li><code>!example.com/admin/help</code>: 行頭に <code>!</code> を付けると例外です。対象 URL のうち、このページだけは Touch ID なしで開けます。</li>
       <li><code>#</code> で始まる行はコメントです。</li>
     </ul>

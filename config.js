@@ -355,7 +355,7 @@ export function buildRules(settings) {
       parsed = parseLine(line);
     } catch (error) {
       // 保存時に確かめているので、通常はここには来ない。1 行のために全体を止めないよう、その行だけ飛ばす。
-      console.error(`[touch-id-gate] 解釈できない行を無視します: ${line}`, error);
+      console.error(`[url-gate] 解釈できない行を無視します: ${line}`, error);
       continue;
     }
     const label = line.trim();
