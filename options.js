@@ -1,11 +1,11 @@
-import { AWS_PRESET, loadSettings, onSettingsChanged, parseCustomPatterns } from './config.js';
+import { loadSettings, onSettingsChanged, parseLines } from './config.js';
+import { PRESETS } from './presets.js';
 import { loadCredential, registerCredential, requestAssertion } from './webauthn.js';
 
 const state = document.getElementById('state');
 const status = document.getElementById('status');
 const registerButton = document.getElementById('register');
-const customPatternsInput = document.getElementById('custom-patterns');
-const awsPresetInput = document.getElementById('aws-preset');
+const linesInput = document.getElementById('lines');
 const saveButton = document.getElementById('save');
 const settingsStatus = document.getElementById('settings-status');
 
@@ -18,8 +18,7 @@ async function showState() {
 }
 
 function showSettings(settings) {
-  customPatternsInput.value = settings.customPatterns.join('\n');
-  awsPresetInput.checked = settings.awsPreset;
+  linesInput.value = settings.lines.join('\n');
 }
 
 async function sendToBackground(message) {
@@ -28,17 +27,23 @@ async function sendToBackground(message) {
   return response;
 }
 
-const AWS_PRESET_LABELS = [
-  ...AWS_PRESET.gatedNavigations.map((entry) => entry.label),
-  ...AWS_PRESET.portalSites.map((entry) => `${entry.label}（一覧画面を除く）`),
-  ...AWS_PRESET.credentialRequests.map((entry) => `${entry.label}（通信）`),
-];
+// 例の行を、対象 URL の欄の末尾に足す。すでに書いてある行は足さない。保存するまで反映されない。
+function addPreset(preset) {
+  const current = linesInput.value.split('\n');
+  const existing = new Set(current.map((line) => line.trim()));
+  const additions = preset.lines.filter((line) => line === '' || !existing.has(line));
+  const { lines } = parseLines([...current, '', ...additions]);
+  linesInput.value = lines.join('\n');
+  settingsStatus.textContent = `${preset.name} の例を追加しました。「Touch ID で保存する」を押すと反映されます。`;
+}
 
-document.getElementById('aws-preset-urls').append(
-  ...AWS_PRESET_LABELS.map((label) => {
-    const item = document.createElement('li');
-    item.textContent = label;
-    return item;
+document.getElementById('presets').append(
+  ...PRESETS.map((preset) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = `例を追加: ${preset.name}`;
+    button.addEventListener('click', () => addPreset(preset));
+    return button;
   }),
 );
 
@@ -59,9 +64,9 @@ registerButton.addEventListener('click', async () => {
 
 // 保存はバックグラウンドが Touch ID の署名を検証してから行う。
 saveButton.addEventListener('click', async () => {
-  const { patterns, errors } = parseCustomPatterns(customPatternsInput.value.split('\n'));
+  const { lines, errors } = parseLines(linesInput.value.split('\n'));
   if (errors.length > 0) {
-    settingsStatus.textContent = `書き方が正しくない URL パターンがあります: ${errors.join(' / ')}`;
+    settingsStatus.textContent = `書き方が正しくない行があります: ${errors.join(' / ')}`;
     return;
   }
 
@@ -78,7 +83,7 @@ saveButton.addEventListener('click', async () => {
     await sendToBackground({
       type: 'saveSettings',
       assertion,
-      settings: { awsPreset: awsPresetInput.checked, customPatterns: patterns },
+      settings: { lines },
     });
     settingsStatus.textContent = '保存しました。';
   } catch (error) {
