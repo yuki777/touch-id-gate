@@ -14,10 +14,26 @@ export const DEFAULT_SETTINGS = Object.freeze({ lines: [] });
 
 // 0.3 までの設定（AWS プリセットの有効・無効と、追加した URL パターン）を、同じ内容の行に直す。
 // 0.3 までは AWS の対象 URL が最初から有効だったので、保存された設定が無い場合も AWS の行を入れる。
+// 0.3 までは、追加した URL パターンが AWS の一覧画面の例外より優先だった。いまは例外が優先なので、
+// 追加した URL パターンと重なる例外の行は入れず、Touch ID を求めていたページが外れないようにする。
 export function convertLegacySettings(stored) {
-  const presetLines = stored?.awsPreset === false ? [] : AWS_IAM_IDENTITY_CENTER.lines;
   const customPatterns = Array.isArray(stored?.customPatterns) ? stored.customPatterns : [];
-  return { lines: [...presetLines, ...(presetLines.length > 0 && customPatterns.length > 0 ? [''] : []), ...customPatterns] };
+  const customGates = customPatterns.flatMap((line) => {
+    try {
+      const parsed = parseLine(line);
+      return parsed.kind === 'gate' ? [parsed] : [];
+    } catch {
+      return [];
+    }
+  });
+  const overlapsCustomGate = (line) => {
+    const parsed = parseLine(line);
+    return parsed.kind === 'exception' && customGates.some((gate) => gateOverlapsException(gate, parsed));
+  };
+  const presetLines =
+    stored?.awsPreset === false ? [] : AWS_IAM_IDENTITY_CENTER.lines.filter((line) => !overlapsCustomGate(line));
+  const separator = presetLines.length > 0 && customPatterns.length > 0 ? [''] : [];
+  return { lines: [...presetLines, ...separator, ...customPatterns] };
 }
 
 const isCurrentSettings = (stored) => Array.isArray(stored?.lines);
@@ -254,6 +270,44 @@ function exceptionMatcher(pattern) {
       matchesGlob(url.hash || '#', fragment)
     );
   };
+}
+
+// * を含むパターンどうしで、両方に一致する文字列があるか。
+function globsIntersect(first, second) {
+  const memo = new Map();
+  const visit = (firstIndex, secondIndex) => {
+    if (firstIndex === first.length && secondIndex === second.length) return true;
+    const key = firstIndex * (second.length + 1) + secondIndex;
+    if (!memo.has(key)) {
+      const hasFirst = firstIndex < first.length;
+      const hasSecond = secondIndex < second.length;
+      let result;
+      if (hasFirst && first[firstIndex] === '*') {
+        result = visit(firstIndex + 1, secondIndex) || (hasSecond && visit(firstIndex, secondIndex + 1));
+      } else if (hasSecond && second[secondIndex] === '*') {
+        result = visit(firstIndex, secondIndex + 1) || (hasFirst && visit(firstIndex + 1, secondIndex));
+      } else {
+        result = hasFirst && hasSecond && first[firstIndex] === second[secondIndex] && visit(firstIndex + 1, secondIndex + 1);
+      }
+      memo.set(key, result);
+    }
+    return memo.get(key);
+  };
+  return visit(0, 0);
+}
+
+// 先頭の *. はサブドメインなしにも一致するので、その形も比べる。
+const hostnameForms = (hostname) => (hostname.startsWith('*.') ? [hostname, hostname.slice(2)] : [hostname]);
+
+// 対象 URL と例外の両方に一致する URL がありうるか。対象 URL は # 以降を見ないので、# 以降は比べない。
+function gateOverlapsException(gate, exception) {
+  const hostsOverlap = hostnameForms(gate.hostname).some((gateHost) =>
+    hostnameForms(exception.hostname).some((exceptionHost) => globsIntersect(gateHost, exceptionHost)),
+  );
+  const portsOverlap =
+    gate.port === '' || exception.port === '' || gate.port === exception.port || (isDefaultPort(gate.port) && isDefaultPort(exception.port));
+  const pathsOverlap = globsIntersect(`${gate.path.toLowerCase()}*`, exceptionPath(exception).toLowerCase());
+  return hostsOverlap && portsOverlap && pathsOverlap;
 }
 
 // ---- 設定ページの入力 ----

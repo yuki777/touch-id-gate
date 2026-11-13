@@ -146,3 +146,21 @@ test('0.3 までの設定は、同じ内容の行に直す', () => {
   assert.deepEqual(convertLegacySettings(undefined).lines, AWS_IAM_IDENTITY_CENTER.lines);
   assert.deepEqual(parseLines(withPreset.lines).errors, []);
 });
+
+test('0.3 までに追加した URL パターンと重なる AWS の例外は、移し替えない', () => {
+  const urls = {
+    ownPortalList: 'https://d-1234567890.awsapps.com/start/#/',
+    otherPortalList: 'https://ssoins-1.portal.us-east-1.app.aws/#/?tab=accounts',
+  };
+  const gatedAfterMigration = (customPatterns) => {
+    const rules = buildRules(convertLegacySettings({ awsPreset: true, customPatterns }));
+    return Object.fromEntries(Object.entries(urls).map(([name, url]) => [name, isGatedUrl(url, rules)]));
+  };
+  // 0.3 では、追加した URL パターンが一覧画面の例外より優先だった。
+  for (const pattern of ['*.awsapps.com/start', 'd-1234567890.awsapps.com', '*.com/START/*', 'https://*awsapps.com:443/st*']) {
+    assert.deepEqual(gatedAfterMigration([pattern]), { ownPortalList: true, otherPortalList: false }, pattern);
+  }
+  for (const pattern of ['example.com/admin*', 'awsapps.com.example.com', '*.awsapps.com/start/x', 'd-1.awsapps.com/other']) {
+    assert.deepEqual(gatedAfterMigration([pattern]), { ownPortalList: false, otherPortalList: false }, pattern);
+  }
+});

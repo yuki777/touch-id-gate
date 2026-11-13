@@ -28,12 +28,20 @@ async function sendToBackground(message) {
 }
 
 // 例の行を、対象 URL の欄の末尾に足す。すでに書いてある行は足さない。保存するまで反映されない。
+// 書きかけの行を消さないように、いま書いてある内容には手を付けない。
 function addPreset(preset) {
-  const current = linesInput.value.split('\n');
-  const existing = new Set(current.map((line) => line.trim()));
-  const additions = preset.lines.filter((line) => line === '' || !existing.has(line));
-  const { lines } = parseLines([...current, '', ...additions]);
-  linesInput.value = lines.join('\n');
+  const current = linesInput.value.trimEnd();
+  const existing = new Set(current.split('\n').map((line) => line.trim()));
+  const additions = preset.lines
+    .filter((line) => line === '' || !existing.has(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (additions === '') {
+    settingsStatus.textContent = `${preset.name} の例は、すでに入っています。`;
+    return;
+  }
+  linesInput.value = current === '' ? additions : `${current}\n\n${additions}`;
   settingsStatus.textContent = `${preset.name} の例を追加しました。「Touch ID で保存する」を押すと反映されます。`;
 }
 
