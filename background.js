@@ -35,7 +35,7 @@ const unlockExpiryKey = (tabId) => `unlockExpiresAt:${tabId}`;
 const PREPARED_VERSION_KEY = 'preparedVersion';
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
 
-const logError = (context) => (error) => console.error(`[touch-id-gate] ${context}`, error);
+const logError = (context) => (error) => console.error(`[url-gate] ${context}`, error);
 
 // 失敗は installQueue が記録するので、ここでは握りつぶす。
 const ignoreError = () => {};
@@ -94,7 +94,7 @@ async function supportedNetworkRules(rules) {
   const unsupported = new Set((await findUnsupportedRegexes(candidates)).map(({ entry }) => entry));
   // 1 つでも通らない正規表現があると全体の登録が失敗するので、通らないものは除いて記録する。
   // 保存時に確かめているので、通常はここで除かれるものはない。除いた対象 URL も、遷移の検知による差し替えは効く。
-  for (const entry of unsupported) console.error(`[touch-id-gate] ブロックルールにできない URL: ${entry.label}`);
+  for (const entry of unsupported) console.error(`[url-gate] ブロックルールにできない URL: ${entry.label}`);
   return candidates.filter(({ entry }) => !unsupported.has(entry));
 }
 

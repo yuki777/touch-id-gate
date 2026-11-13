@@ -48,7 +48,7 @@ unlockButton.addEventListener('click', async () => {
     await unlockWith(credential);
     status.textContent = '確認できました。移動します。';
   } catch (error) {
-    console.error('[touch-id-gate] 解除に失敗', error);
+    console.error('[url-gate] 解除に失敗', error);
     status.textContent = `開けませんでした: ${error.message}`;
   } finally {
     setBusy(false);
@@ -64,7 +64,7 @@ registerButton.addEventListener('click', async () => {
   try {
     credential = await registerCredential();
   } catch (error) {
-    console.error('[touch-id-gate] 登録に失敗', error);
+    console.error('[url-gate] 登録に失敗', error);
     status.textContent = `登録できませんでした: ${error.message}`;
     setBusy(false);
     return;
@@ -76,7 +76,7 @@ registerButton.addEventListener('click', async () => {
     await unlockWith(credential);
     status.textContent = '確認できました。移動します。';
   } catch (error) {
-    console.error('[touch-id-gate] 登録後の解除に失敗', error);
+    console.error('[url-gate] 登録後の解除に失敗', error);
     status.textContent = `登録はできましたが、開けませんでした: ${error.message}。「Touch ID で開く」を押してください。`;
   } finally {
     setBusy(false);
@@ -101,6 +101,6 @@ async function initialize() {
 }
 
 initialize().catch((error) => {
-  console.error('[touch-id-gate] ゲートページの準備に失敗', error);
+  console.error('[url-gate] ゲートページの準備に失敗', error);
   status.textContent = `登録状態を取得できませんでした: ${error.message}`;
 });

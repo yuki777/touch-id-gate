@@ -62,7 +62,7 @@ registerButton.addEventListener('click', async () => {
     await registerCredential();
     status.textContent = '登録しました。';
   } catch (error) {
-    console.error('[touch-id-gate] 登録に失敗', error);
+    console.error('[url-gate] 登録に失敗', error);
     status.textContent = `登録できませんでした: ${error.message}`;
   } finally {
     registerButton.disabled = false;
@@ -95,7 +95,7 @@ saveButton.addEventListener('click', async () => {
     });
     settingsStatus.textContent = '保存しました。';
   } catch (error) {
-    console.error('[touch-id-gate] 設定の保存に失敗', error);
+    console.error('[url-gate] 設定の保存に失敗', error);
     settingsStatus.textContent = `保存できませんでした: ${error.message}`;
   } finally {
     saveButton.disabled = false;
@@ -106,13 +106,13 @@ saveButton.addEventListener('click', async () => {
 onSettingsChanged(showSettings);
 
 showState().catch((error) => {
-  console.error('[touch-id-gate] 状態の取得に失敗', error);
+  console.error('[url-gate] 状態の取得に失敗', error);
   state.textContent = `状態を取得できませんでした: ${error.message}`;
 });
 
 loadSettings()
   .then(showSettings)
   .catch((error) => {
-    console.error('[touch-id-gate] 設定の取得に失敗', error);
+    console.error('[url-gate] 設定の取得に失敗', error);
     settingsStatus.textContent = `設定を取得できませんでした: ${error.message}`;
   });

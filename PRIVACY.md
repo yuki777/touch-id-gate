@@ -18,7 +18,7 @@ URL Gate は、利用者のデータを収集しません。外部への通信�
 - 開発者を含め、第三者にデータを送信、販売、共有することはありません。解析やトラッキングの仕組みも入れていません。
 - 拡張を削除すると、保存したデータはすべて消えます。
 
-問い合わせは [GitHub の Issues](https://github.com/yuki777/touch-id-gate/issues) へお願いします。
+問い合わせは [GitHub の Issues](https://github.com/yuki777/url-gate/issues) へお願いします。
 
 ## English
 
@@ -36,4 +36,4 @@ URL Gate does not collect any user data and makes no network requests of its own
 - No data is sent, sold, or shared with anyone, including the developer. There is no analytics or tracking.
 - Removing the extension deletes all stored data.
 
-For questions, please open an issue on [GitHub](https://github.com/yuki777/touch-id-gate/issues).
+For questions, please open an issue on [GitHub](https://github.com/yuki777/url-gate/issues).

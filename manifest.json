@@ -3,7 +3,7 @@
   "name": "URL Gate",
   "version": "0.5.0",
   "description": "指定した URL を開く前に、Touch ID での本人確認を求めます。",
-  "homepage_url": "https://github.com/yuki777/touch-id-gate",
+  "homepage_url": "https://github.com/yuki777/url-gate",
   "minimum_chrome_version": "122",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1xhvCw2BMO0FAtTrWSbE0eKDXVUCbsexppyFVDH3Jc0Blh+JFdGUkZarWmlirgMSsxky8mSahjOv8OVLnY0R/yLjL9t9I7/D7iLi0cnJC2/xoBMdLpI1VDUMPNPnrGWMb7KA5rGJw5Hds2vaGIjq1rOsQ82zlsblO/gqhrygQ4h92vYLYrxGXNatvshvvukHD4noe434vpnpnFh22IG/ALINjaE3iWuJTJTEI9UdFfBqx/K0RL4LBdCKReItphw8CQ76sHS9PSwO4ceWjTD5Lf6ro/sVA2DTe0J7ieC4Uhls/bFyxRAy48k+pw4f45d+1ewcn6pA/bqBELkRt6ihRQIDAQAB",
   "permissions": ["declarativeNetRequest", "webNavigation", "storage", "alarms", "activeTab"],
