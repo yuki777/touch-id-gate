@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.4.0](https://github.com/yuki777/touch-id-gate/compare/0.3.0...0.4.0) - 2026-11-13
+
+- feat: AWS 固有の処理をなくし、例外と通信のブロックを設定の行として書けるようにする by @yuki777 in https://github.com/yuki777/touch-id-gate/pull/7
+
 ## [0.3.0](https://github.com/yuki777/touch-id-gate/compare/0.2.2...0.3.0) - 2026-11-12
 
 - feat: 対象 URL を設定ページで追加できるようにし、AWS の対象 URL はプリセットにする by @yuki777 in https://github.com/yuki777/touch-id-gate/pull/5
