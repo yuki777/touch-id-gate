@@ -17,16 +17,16 @@
 
     <label for="lines">対象 URL（1 行に 1 つ）</label>
     <textarea id="lines" class="url" rows="16" spellcheck="false"
-      placeholder="example.com/admin&#10;!example.com/admin/help&#10;all:api.example.com/token"></textarea>
+      placeholder="example.com/admin&#10;!example.com/admin/help"></textarea>
     <p id="presets"></p>
 
     <h3>行の種類</h3>
     <ul class="hint">
-      <li><code>example.com/admin</code>: ページを開く操作（画面の遷移と iframe の読み込み）を止めます。</li>
-      <li><code>all:api.example.com/token</code>: 行頭に <code>all:</code>（すべての通信）を付けると、ページを開く操作に加えて、ページの中からの通信（スクリプトの fetch など）も止めます。Touch ID を通したタブからだけ通信できます。</li>
+      <li><code>example.com/admin</code>: このページを開く前に、Touch ID を求めます。</li>
       <li><code>!example.com/admin/help</code>: 行頭に <code>!</code> を付けると例外です。対象 URL のうち、このページだけは Touch ID なしで開けます。</li>
       <li><code>#</code> で始まる行はコメントです。</li>
     </ul>
+    <p class="hint">ページの中のスクリプトからの通信も止める書き方（<code>all:</code> で始まる行）は、<a href="https://github.com/yuki777/url-gate/blob/main/docs/advanced.md" target="_blank" rel="noopener noreferrer">詳しい書き方</a>にあります。</p>
 
     <h3>URL の書き方</h3>
     <ul class="hint">
