@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.5.2](https://github.com/yuki777/url-gate/compare/0.5.1...0.5.2) - 2026-11-14
+
+- docs: README をシンプルにし、all: と AWS の例を別ページに分ける by @yuki777 in https://github.com/yuki777/url-gate/pull/14
+
 ## [0.5.1](https://github.com/yuki777/url-gate/compare/0.5.0...0.5.1) - 2026-11-13
 
 - docs: all: の意味と使いどころを説明し、リポジトリ名の変更に URL を合わせる by @yuki777 in https://github.com/yuki777/url-gate/pull/11
