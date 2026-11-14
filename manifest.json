@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "URL Gate",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "指定した URL を開く前に、Touch ID での本人確認を求めます。",
   "homepage_url": "https://github.com/yuki777/url-gate",
   "minimum_chrome_version": "122",
